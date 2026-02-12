@@ -36,7 +36,7 @@ class Coin(pygame.sprite.Sprite):
         self,
         center: tuple[int, int],
         *,
-        hitbox_size: int = 18,
+        hitbox_size: int = 24,
         visual_size: int = 30,
         color: pygame.Color,
     ) -> None:
