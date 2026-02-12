@@ -81,6 +81,35 @@ class Hazard(pygame.sprite.Sprite):
         self.rect.centerx = int(x)
 
 
+class ScorePopup(pygame.sprite.Sprite):
+    """Floating '+1' text that rises and fades after a coin pickup."""
+
+    def __init__(self, center: tuple[int, int], font: pygame.font.Font) -> None:
+        super().__init__()
+        self._font = font
+        self._x = float(center[0])
+        self._y = float(center[1])
+        self._alpha = 255.0
+        self._life = 0.8
+        self._elapsed = 0.0
+        self._render()
+
+    def _render(self) -> None:
+        base = self._font.render("+1", True, pygame.Color("#a3be8c"))
+        self.image = base.convert_alpha()
+        self.image.set_alpha(int(self._alpha))
+        self.rect = self.image.get_rect(center=(round(self._x), round(self._y)))
+
+    def update(self, dt: float) -> None:
+        self._elapsed += dt
+        self._y -= 45 * dt
+        self._alpha = max(0.0, 255.0 * (1.0 - self._elapsed / self._life))
+        if self._elapsed >= self._life:
+            self.kill()
+            return
+        self._render()
+
+
 class Player(pygame.sprite.Sprite):
     def __init__(
         self,
@@ -139,6 +168,7 @@ class Game:
         self.walls: pygame.sprite.Group[Wall] = pygame.sprite.Group()
         self.coins: pygame.sprite.Group[Coin] = pygame.sprite.Group()
         self.hazards: pygame.sprite.Group[Hazard] = pygame.sprite.Group()
+        self.popups: pygame.sprite.Group[ScorePopup] = pygame.sprite.Group()
 
         self.player = Player(self.playfield.center, color=self.palette.player)
         self.all_sprites.add(self.player)
@@ -151,6 +181,7 @@ class Game:
         self.walls.empty()
         self.coins.empty()
         self.hazards.empty()
+        self.popups.empty()
 
         self.player = Player(self.playfield.center, color=self.palette.player)
         self.all_sprites.add(self.player)
@@ -303,12 +334,15 @@ class Game:
         picked = pygame.sprite.spritecollide(self.player, self.coins, dokill=True)
         if picked:
             self.player.score += len(picked)
+            for coin in picked:
+                self.popups.add(ScorePopup(coin.rect.center, self.font))
 
         # Hazards: damage + response
         for hz in pygame.sprite.spritecollide(self.player, self.hazards, dokill=False):
             self._apply_damage(hz.rect)
 
         self.hazards.update(dt)
+        self.popups.update(dt)
 
         if self.player.invincible_for > 0:
             self.player.invincible_for = max(0.0, self.player.invincible_for - dt)
@@ -384,6 +418,10 @@ class Game:
 
         if self.debug:
             self._draw_debug(cam)
+
+        # Popups drawn in screen space
+        for popup in self.popups:
+            self.screen.blit(popup.image, popup.rect)
 
         if self.state == "title":
             self._draw_center_message("Sprites + Collisions\nPress Space to start", cam)
