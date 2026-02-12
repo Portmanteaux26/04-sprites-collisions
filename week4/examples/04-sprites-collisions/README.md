@@ -1,17 +1,11 @@
-# Week 4 Example — Sprites + Collisions
+# Week 4 — Sprites + Collisions
 
-This example supports the Week 4 slides (sprites, groups, hitboxes, and collision responses).
-
-## Learning goals
-- Use `pygame.sprite.Sprite` and `pygame.sprite.Group`
-- Keep a *hitbox* (`rect`) separate from how you draw
-- Detect overlaps and handle *responses* (solid walls, triggers, damage)
-- Add basic fairness/feel: feedback bundle + short invincibility frames
+Simple game exploring sprites, collisions, collision rules, and collision feedback.
 
 ## Run
 From this folder:
 
-- `python3 -m pip install pygame`
+- `python3 -m pip install -r requirements.txt`
 - `python3 main.py`
 
 ## Controls
@@ -20,7 +14,11 @@ From this folder:
 - `R`: reset
 - `Esc`: quit
 
-## What to change first
-- Make the coin smaller/bigger (hitbox vs art) in `sprites_collisions/game.py`
-- Change the arena walls layout
-- Try different knockback + i-frame timing
+## This Week
+- Wave progression with increasing difficulty
+- Power-up: invulnerability
+- Animation feedback for coin pick-up
+
+## Core Game Loop
+
+Player moves around the playfield, trying to collect coins.  When all the coins on screen are collected, the wave is complete.  Each wave spawns coins randomly and increases speed of obstacles.  
