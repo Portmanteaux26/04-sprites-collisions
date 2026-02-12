@@ -48,6 +48,32 @@ class Coin(pygame.sprite.Sprite):
         self.color = color
 
 
+class PowerUp(pygame.sprite.Sprite):
+    """Collectible that grants temporary invincibility."""
+
+    DURATION = 5.0  # seconds of invincibility
+
+    def __init__(
+        self,
+        center: tuple[int, int],
+        *,
+        hitbox_size: int = 24,
+        visual_size: int = 32,
+        color: pygame.Color = pygame.Color("#a3be8c"),
+    ) -> None:
+        super().__init__()
+        self.rect = pygame.Rect(0, 0, hitbox_size, hitbox_size)
+        self.rect.center = center
+
+        self.visual_size = visual_size
+        self.color = color
+
+        self._bob_time = 0.0
+
+    def update(self, dt: float) -> None:
+        self._bob_time += dt
+
+
 class Hazard(pygame.sprite.Sprite):
     def __init__(
         self,
@@ -173,6 +199,7 @@ class Game:
         self.coins: pygame.sprite.Group[Coin] = pygame.sprite.Group()
         self.hazards: pygame.sprite.Group[Hazard] = pygame.sprite.Group()
         self.popups: pygame.sprite.Group[ScorePopup] = pygame.sprite.Group()
+        self.powerups: pygame.sprite.Group[PowerUp] = pygame.sprite.Group()
 
         self.player = Player(self.playfield.center, color=self.palette.player)
         self.all_sprites.add(self.player)
@@ -186,6 +213,7 @@ class Game:
         self.coins.empty()
         self.hazards.empty()
         self.popups.empty()
+        self.powerups.empty()
 
         self.player = Player(self.playfield.center, color=self.palette.player)
         self.all_sprites.add(self.player)
@@ -237,6 +265,8 @@ class Game:
                 self.all_sprites.add(candidate)
                 break
 
+        self._spawn_powerup(rng)
+
         if not keep_state:
             self.state = "play"
 
@@ -263,6 +293,30 @@ class Game:
                 self.coins.add(candidate)
                 self.all_sprites.add(candidate)
                 break
+
+        self._spawn_powerup(rng)
+
+    def _spawn_powerup(self, rng: random.Random) -> None:
+        """Place one invincibility power-up that doesn't overlap walls, coins, or the player."""
+        for pw in self.powerups:
+            pw.kill()
+        self.powerups.empty()
+
+        for _ in range(200):
+            x = rng.randint(self.playfield.left + 40, self.playfield.right - 40)
+            y = rng.randint(self.playfield.top + 40, self.playfield.bottom - 40)
+            candidate = PowerUp((x, y))
+
+            if pygame.sprite.spritecollideany(candidate, self.walls):
+                continue
+            if pygame.sprite.spritecollideany(candidate, self.coins):
+                continue
+            if candidate.rect.colliderect(self.player.rect):
+                continue
+
+            self.powerups.add(candidate)
+            self.all_sprites.add(candidate)
+            break
 
     def handle_event(self, event: pygame.event.Event) -> None:
         if event.type != pygame.KEYDOWN:
@@ -387,12 +441,20 @@ class Game:
             for coin in picked:
                 self.popups.add(ScorePopup(coin.rect.center, self.font))
 
+        # Triggers: power-up pickup
+        grabbed = pygame.sprite.spritecollide(self.player, self.powerups, dokill=True)
+        if grabbed:
+            self.player.invincible_for = max(
+                self.player.invincible_for, PowerUp.DURATION
+            )
+
         # Hazards: damage + response
         for hz in pygame.sprite.spritecollide(self.player, self.hazards, dokill=False):
             self._apply_damage(hz.rect)
 
         self.hazards.update(dt)
         self.popups.update(dt)
+        self.powerups.update(dt)
 
         if self.player.invincible_for > 0:
             self.player.invincible_for = max(0.0, self.player.invincible_for - dt)
@@ -425,7 +487,7 @@ class Game:
 
         hud = f"Score: {self.player.score}    HP: {self.player.hp}    Wave: {self._wave}"
         if self.player.is_invincible:
-            hud += "    i-frames"
+            hud += f"    Shield: {self.player.invincible_for:.1f}s"
 
         self.screen.blit(self.font.render(hud, True, self.palette.text), (14, 18))
         self.screen.blit(
@@ -445,6 +507,18 @@ class Game:
             visual.center = coin.rect.center
             pygame.draw.circle(self.screen, coin.color, visual.center + cam, visual.width // 2)
             pygame.draw.circle(self.screen, pygame.Color("#000000"), visual.center + cam, visual.width // 2, 2)
+
+        # Draw power-ups (diamond shape with gentle pulse)
+        for pw in self.powerups:
+            import math
+            pulse = 1.0 + 0.12 * math.sin(pw._bob_time * 4.0)
+            half = int(pw.visual_size * pulse) // 2
+            cx, cy = pw.rect.center
+            cx += int(cam.x)
+            cy += int(cam.y)
+            pts = [(cx, cy - half), (cx + half, cy), (cx, cy + half), (cx - half, cy)]
+            pygame.draw.polygon(self.screen, pw.color, pts)
+            pygame.draw.polygon(self.screen, pygame.Color("#000000"), pts, 2)
 
         # Draw hazards
         for hazard in self.hazards:
@@ -489,6 +563,8 @@ class Game:
             pygame.draw.rect(self.screen, pygame.Color("#ebcb8b"), coin.rect.move(cam), 2)
         for hazard in self.hazards:
             pygame.draw.rect(self.screen, pygame.Color("#bf616a"), hazard.rect.move(cam), 2)
+        for pw in self.powerups:
+            pygame.draw.rect(self.screen, pygame.Color("#a3be8c"), pw.rect.move(cam), 2)
 
         # Help text
         self.screen.blit(
