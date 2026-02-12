@@ -162,7 +162,11 @@ class Game:
         )
 
         self.debug = False
-        self.state = "title"  # title | play | gameover
+        self.state = "title"  # title | play | wave_clear | gameover
+
+        self._wave = 1
+        self._wave_clear_timer = 0.0
+        self._WAVE_CLEAR_PAUSE = 2.0   # seconds to display the wave-clear screen
 
         self.all_sprites: pygame.sprite.Group[pygame.sprite.Sprite] = pygame.sprite.Group()
         self.walls: pygame.sprite.Group[Wall] = pygame.sprite.Group()
@@ -236,6 +240,30 @@ class Game:
         if not keep_state:
             self.state = "play"
 
+    def _respawn_coins(self) -> None:
+        """Remove old coins and scatter a fresh set. Hazards keep moving."""
+        for coin in self.coins:
+            coin.kill()
+        self.coins.empty()
+
+        rng = random.Random(self._wave * 7 + 4)
+        for _ in range(8):
+            for __ in range(100):
+                x = rng.randint(self.playfield.left + 40, self.playfield.right - 40)
+                y = rng.randint(self.playfield.top + 40, self.playfield.bottom - 40)
+                candidate = Coin((x, y), color=self.palette.coin)
+
+                if pygame.sprite.spritecollideany(candidate, self.walls):
+                    continue
+                if pygame.sprite.spritecollideany(candidate, self.coins):
+                    continue
+                if candidate.rect.colliderect(self.player.rect):
+                    continue
+
+                self.coins.add(candidate)
+                self.all_sprites.add(candidate)
+                break
+
     def handle_event(self, event: pygame.event.Event) -> None:
         if event.type != pygame.KEYDOWN:
             return
@@ -249,12 +277,16 @@ class Game:
             return
 
         if event.key == pygame.K_r:
+            self._wave = 1
             self._reset_level(keep_state=(self.state == "title"))
             return
 
         if self.state in {"title", "gameover"} and event.key == pygame.K_SPACE:
             self._reset_level(keep_state=True)
             self.state = "play"
+
+        if self.state == "wave_clear" and event.key == pygame.K_SPACE:
+            self._start_next_wave()
 
     def _read_move(self) -> pygame.Vector2:
         keys = pygame.key.get_pressed()
@@ -316,9 +348,27 @@ class Game:
         if self.player.hp <= 0:
             self.state = "gameover"
 
+    def _start_next_wave(self) -> None:
+        """Increment wave, speed up hazards in place, respawn coins."""
+        self._wave += 1
+        for hz in self.hazards:
+            hz.speed *= 1.15
+        self._respawn_coins()
+        self.state = "play"
+
     def update(self, dt: float) -> None:
         if self._shake > 0:
             self._shake = max(0.0, self._shake - dt)
+
+        # Always tick popups so they finish fading
+        self.popups.update(dt)
+
+        # Wave-clear pause: freeze everything, count down, then start next wave
+        if self.state == "wave_clear":
+            self._wave_clear_timer -= dt
+            if self._wave_clear_timer <= 0:
+                self._start_next_wave()
+            return
 
         if self.state != "play":
             return
@@ -348,9 +398,8 @@ class Game:
             self.player.invincible_for = max(0.0, self.player.invincible_for - dt)
 
         if len(self.coins) == 0:
-            # Quick win condition: respawn coins + hazards to keep playing
-            self._reset_level(keep_state=True)
-            self.state = "play"
+            self.state = "wave_clear"
+            self._wave_clear_timer = self._WAVE_CLEAR_PAUSE
 
     def _camera_offset(self) -> pygame.Vector2:
         if self._shake <= 0:
@@ -374,7 +423,7 @@ class Game:
             1,
         )
 
-        hud = f"Score: {self.player.score}    HP: {self.player.hp}"
+        hud = f"Score: {self.player.score}    HP: {self.player.hp}    Wave: {self._wave}"
         if self.player.is_invincible:
             hud += "    i-frames"
 
@@ -427,6 +476,11 @@ class Game:
             self._draw_center_message("Sprites + Collisions\nPress Space to start", cam)
         elif self.state == "gameover":
             self._draw_center_message("Game over\nPress Space to restart", cam)
+        elif self.state == "wave_clear":
+            self._draw_center_message(
+                f"Wave {self._wave} Complete!\nScore: {self.player.score}\nSpace to continue",
+                cam,
+            )
 
     def _draw_debug(self, cam: pygame.Vector2) -> None:
         # Hitboxes
